@@ -1,0 +1,123 @@
+; --------------------------------------------------------------------------------
+; @Title: Demo script for S32K144 on S32K144EVB (FLASH)
+; @Description:
+;   Programs the sieve demo application into the processor internal flash and
+;   sets up a demo debug scenario.
+;   This script can be used as a template for flashing an application.
+;   Prerequisites:
+;    * Connect Debug Cable to J14 using Adapter LA-3770
+;      or
+;      Connect Combiprobe/uTrace to J14
+; @Keywords: ARM, Cortex-M4, Flash
+; @Author: AME
+; @Board: S32K144EVB
+; @Chip: S32K14*
+; @Copyright: (C) 1989-2017 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: s32k144_sieve_flash.cmm 10999 2017-06-22 14:55:33Z amerkle $
+
+
+;WinCLEAR
+
+; --------------------------------------------------------------------------------
+; initialize and start the debugger
+RESet
+SYStem.RESet
+SYStem.CPU S32K144
+SYStem.CONFIG.DEBUGPORTTYPE SWD
+IF COMBIPROBE()||UTRACE()
+(
+  SYStem.CONFIG.CONNECTOR MIPI20T
+)
+SYStem.Option DUALPORT ON
+SYStem.MemAccess DAP
+SYStem.JtagClock CTCK 10MHz
+Trace.DISable
+SYStem.Up
+
+; disable BootROM
+GOSUB DisableBootrom
+; disable Watchdog
+GOSUB DisableWatchdog
+
+; --------------------------------------------------------------------------------
+; Flash programming
+
+; prepare flash programming (declarations)
+DO ~~/demo/arm/flash/s32k.cmm PREPAREONLY
+FLASH.Erase ALL 
+; ReProgram Flash
+ 
+FLASH.ReProgram ALL
+;To flash Intel HEX file
+Data.LOAD.IntelHEX "PSA_E-toggle_C6-sample_Combined_BEV_242502.hex"
+FLASH.ReProgram OFF
+
+; --------------------------------------------------------------------------------
+; Reset the target again
+SYStem.Up
+
+; disable BootROM
+GOSUB DisableBootrom
+; disable Watchdog
+GOSUB DisableWatchdog
+
+; --------------------------------------------------------------------------------
+; start program execution
+Go
+WAIT !STATE.RUN()
+
+; --------------------------------------------------------------------------------
+; open some windows
+;WinCLEAR
+;Mode.Hll
+;WinPOS 0. 0. 116. 26.
+;List.auto
+;WinPOS 120. 0. 100. 8.
+;Frame.view
+;WinPOS 120. 14.
+;Var.Watch
+;Var.AddWatch %SpotLight ast flags
+;WinPOS 120. 25.
+;Register.view /SpotLight
+;WinPOS 0. 32.
+;Var.DRAW %DEFault sinewave
+
+ENDDO
+
+DisableBootrom:
+(
+  Data.Set SD:0x4007F010 %LE %Long 0x6
+  Data.Set SD:0x4007F014 %LE %Long 0x0
+  RETURN
+)
+
+DisableWatchdog:
+(
+  LOCAL &tmp1 &tmp2
+  &tmp1=Data.Long(ST:0x20000000)
+  &tmp2=Data.Long(ST:0x20000004)
+  Register.SWAP
+  ; The watchdog has a restrictive timing. It has to be configured and unlocked within a peripod
+  ; of 128 cycles. Therefor the unlock sequence need to be done by a small target program.
+  Data.Assemble ST:0x20000000  str  r1,[r0]  ;SD:0x40052004 = 0xD928C520   (Key)
+  Data.Assemble ,              str  r3,[r2]  ;SD:0x40052000 = 0x00002120   (Control register)
+  Data.Assemble ,              str  r5,[r4]  ;SD:0x40052008 = 0x0000FFFF   (Timeout value)
+  Data.Assemble ,              bkpt #0
+  Register.Set PC 0x20000000
+  Register.Set SP 0x20001000
+  Register.Set R0 0x40052004
+  Register.Set R1 0xD928C520
+  Register.Set R2 0x40052000
+  Register.Set R3 0x00002120
+  Register.Set R4 0x40052008
+  Register.Set R5 0x0000FFFF
+  Go.direct
+  WAIT !RUN()
+
+  Data.Set ST:0x20000000 %Long &tmp1
+  Data.Set ST:0x20000004 %Long &tmp2
+  Register.SWAP
+
+  RETURN
+)

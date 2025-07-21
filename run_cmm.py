@@ -1,3 +1,4 @@
+#runcmm.py
 import ctypes
 import os
 import time
@@ -49,30 +50,22 @@ def collect_messages(trace32_api, timeout=TIMEOUT, inactivity_timeout=INACTIVITY
 
     return messages
 
+
+
 def run_cmm(cmm_path: str) -> str:
     api = init_trace32()
     if not api:
-        return json.dumps({
-            "status": "failure",
-            "message": "❌ TRACE32 connection failed. Ensure it's running with Remote API enabled."
-        })
+        return  "message ❌ TRACE32 connection failed. Ensure it's running with Remote API enabled."
 
     if api.T32_Attach(1) != 0:
-        return json.dumps({"status": "failure", "message": "❌ Attach to TRACE32 failed."})
-
+            return "FAIL: Attach failed"
     if not run_cmm_script(api, cmm_path):
-        return json.dumps({"status": "failure", "message": "❌ Failed to run the CMM script."})
-
+            return "FAIL: Failed to run the CMM script"
     messages = collect_messages(api)
     log_file = "trace32_log.txt"
     with open(log_file, "w", encoding="utf-8") as f:
         f.write("\n".join(messages))
-
-    return json.dumps({
-        "status": "success",
-        "message": "✅ Script executed successfully.",
-        "logFile": log_file,
-        "rawOutput": messages
-    })
+        
+    return "\n".join(messages)
    
 

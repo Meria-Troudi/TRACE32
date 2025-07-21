@@ -1,0 +1,162 @@
+void function1(long l)
+{
+   write("function1() called with %d!", l);
+}
+from win32com import client
+import pythoncom
+import time
+
+function1 = None
+canoe_app = None
+is_running = False
+
+class EventHandler:
+
+    def OnInit(self):
+        global canoe_app
+        global function1
+
+        function1 = canoe_app.CAPL.GetFunction('function1')
+
+    def OnStart(self):
+        global is_running
+        is_running = True
+
+canoe_app = client.Dispatch('CANoe.Application')
+measurement = canoe_app.Measurement
+measurement_events = client.WithEvents(measurement, EventHandler)
+measurement.Start()
+
+
+# The following loop takes care of any pending events and, once, the Measurement
+# starts, it will call the CAPL function "function1" 10 times and then exit!
+count = 0
+while count < 10:
+    if (is_running):
+        function1.Call(count)
+        count += 1
+
+    pythoncom.PumpWaitingMessages()
+    time.sleep(1)
+
+
+In the CAPL language, the main functions used for TCP/IP communication are:
+
+tcpOpen(): Used to open a TCP/IP connection. This function needs to specify the destination IP address and port, and return a connection handle for other TCP/IP functions to use.
+
+tcpClose(): Used to close an open TCP/IP connection. A connection handle needs to be passed in.
+
+tcpConnect(): Used to establish a connection on an open TCP/IP connection. A connection handle needs to be passed in.
+
+tcpDisconnect(): Used to disconnect on a connected TCP/IP connection. A connection handle needs to be passed in.
+
+tcpReceive(): Used to receive data from TCP/IP connections. A connection handle needs to be passed in and the length of the data received returned.
+
+tcpSend(): Used to send data to TCP/IP connections. A connection handle and data to be sent need to be passed in.
+
+Of the above functions, I am most familiar with the tcpOpen() and tcpSend() functions, which are used to open TCP/IP connections and send data.
+
+
+127.0.0.1 is a special IP (It is part of a reserved IP block)that means this computer.
+( from 127.0.0.1 to 127.255.255.254) is reserved for loopback networking.it is not routed to any real network interface card (NIC).
+=>Traffic sent to 127.0.0.1 never leaves your machine.
+port number (must be unique on the machine)
+A port is a 16-bit number (range 0–65535) that identifies a specific process or service on a given IP address.
+Think of it as a door number on a house (IP address = house, port = door).
+0–1023	Well-known ports (HTTP=80, SSH=22)
+1024–49151	Registered ports (apps/services)
+49152–65535	Dynamic/private ports (client-side, ephemeral)
+
+You can have multiple services on 127.0.0.1:12345 and 192.168.1.10:12345 if the IPs are different.
+You can’t bind two services to the same IP and port with the same protocol (unless you use special socket options like SO_REUSEPORT, but that’s advanced).
+ Deeper concepts you should now see clearly:
+A socket is defined by 5-tuple:
+(source IP, source port, dest IP, dest port, protocol)
+A TCP server binds to an IP address and a port, and listens for connections.
+A client connects to that address:port, and a new socket is created for each accepted connection.
+What if you used 0.0.0.0 instead of 127.0.0.1?
+That would bind to all interfaces on the host.
+
+port	Identifies service/process on a machine. Range: 0–65535.
+socket	Combination of IP + port used for communication.
+server	Program that binds to a port and waits for client connections.
+client	Program that connects to a server’s IP:port.
+
+A socket is an endpoint for communication between two machines over a network.
+Each side of a phone call has a handset (socket).The call connects two handsets via the telephone network (TCP/IP stack).
+
+In TCP:A socket is identified by a combination:(IP address, Port number, Protocol)
+
+Socket 	TCP socket	TCP	Connection-oriented, reliable, stream-based//UDP socket	UDP	Connectionless, faster, no guarantee of delivery
+
+TCP (Transmission Control Protocol) is a reliable, ordered, connection-oriented protocol.Guarantees packet delivery (via acknowledgment, retransmission)Delivers data in order
+Detects errors and corruption /Requires a handshake before sending data (3-way handshake)
+
+When two systems communicate via TCP, this is what happens:
+Step 1: Server binds a socket to an IP + port (e.g., 127.0.0.1:12345)Then listens for connections
+Step 2: Client creates a socketConnects to the server’s socket via connect(IP, port)
+
+Step 3: TCP Handshake TCP 3-way handshake happens:
+Client: SYN  ---> Server
+Server: SYN+ACK ---> Client
+Client: ACK  ---> Server
+Step 4: Data transfer After connection is established, both can send() and recv() TCP handles chunking and ordering
+
+Step 5: Closing connection One side sends a FIN The other responds with ACK Then optionally its own FIN → ACK (graceful close)
+ TCP Server-Client in Python (real code)
+ TCP Server
+import socket
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(('127.0.0.1', 12345))  # IP and port
+server.listen(5)  # listen for 5 connections
+print("Server ready...")
+conn, addr = server.accept()  # block until client connects
+print(f"Connected by {addr}")
+data = conn.recv(1024)  # receive up to 1024 bytes
+print("Received:", data.decode())
+conn.send(b"Hello back")
+conn.close()
+📲 TCP Client
+import socket
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect(('127.0.0.1', 12345))  # connect to server
+client.send(b"Hello server")
+response = client.recv(1024)
+print("Server said:", response.decode())
+client.close()
+🎯 What is the Role of a Server?
+A server is a program that: Waits (listens) for incoming connections Handles each client (maybe in a separate thread or process)
+Maintains state, logic, or services (e.g., send back result, process command)
+In your context (e.g., CANoe or Trace32 setup), Python is the server that:
+Accepts commands (e.g., "run script", "start flash")
+Runs something on behalf of the client (like executing a .cmm)
+Returns results
+A client initiates the connection.
+Sends requests
+Waits for a response
+Closes when done
+In your case, CAPL is the client, sending:
+tcpSend("run cmm /path/to/file.cmm")
+📡 How the Data Flows (Example)
+CAPL Script (client)  ---TCP--->  Python Server  ---exec--->  TRACE32
+                           <---TCP---         (returns result to CAPL)
+💡 Key Socket Functions in Python
+Function	Purpose
+socket()	Create a new socket object
+bind()	Assign an IP and port to the socket
+listen()	Start listening for connections
+accept()	Accept a new connection
+connect()	Connect to a server socket
+send() / sendall()	Send data over the connection
+recv()	Receive data
+close()	Close the socket
+
+Always handle exceptions (try/except) for broken connections.
+Use threading or async for handling multiple clients.
+Implement keepalive or heartbeat to detect dead clients (optional).
+Validate incoming data (sanitize commands!).
+Problem	Cause
+"Address already in use"	Port still bound; previous app not closed
+"Connection refused"	Server not running or wrong IP/port
+Partial recv() data	TCP is stream-based, not message-based
+Socket hangs	Blocking recv() call without timeout

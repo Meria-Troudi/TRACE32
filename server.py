@@ -1,25 +1,22 @@
-# canoepy.py
 import socket
-import threading
-import json
-from PyQt5.QtCore import QThread, pyqtSignal, QEventLoop, QTimer
+from PyQt5.QtCore import QThread, pyqtSignal
 
+import threading
 HOST = "127.0.0.1"
 PORT = 12345
-HEARTBEAT_TIMEOUT = 30  # seconds
 
 class TcpServerThread(QThread):
     connected     = pyqtSignal(bool)
     run_requested = pyqtSignal()
-    result_ready  = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
-        self._running = True
         self._srv = None
+        self._running = True
+        self._active_conn = None
+        self._result_ready_event = threading.Event()  # Add this
 
     def run(self):
-        print("[Server] Starting TCP server…")
         self._srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._srv.bind((HOST, PORT))
@@ -31,76 +28,64 @@ class TcpServerThread(QThread):
         while self._running:
             try:
                 conn, addr = self._srv.accept()
-                print(f"[Server] Client connected from {addr}")
-                self.connected.emit(True)
-                threading.Thread(target=self._handle_client, args=(conn, addr), daemon=True).start()
             except socket.timeout:
                 continue
             except Exception as e:
                 print(f"[Server] Accept error: {e}")
                 break
 
-        if self._srv:
-            self._srv.close()
-        self.connected.emit(False)
+            print(f"[Server] Client connected from {addr}")
+            self.connected.emit(True)
+            self._handle_connection(conn, addr)
+            self.connected.emit(False)
+
+        self._srv.close()
         print("[Server] Stopped.")
 
-    def _handle_client(self, conn, addr):
-        last_hb = __import__("time").time()
-        conn.settimeout(1.0)
+    def _handle_connection(self, conn, addr):
+        buffer = b""
         try:
             while True:
-                try:
-                    data = conn.recv(1024).decode().strip()
-                    if not data:
-                        break
-                    self.command_received.emit(data)
-                except socket.timeout:
-                    # check for heartbeat timeout
-                    if __import__("time").time() - last_hb > HEARTBEAT_TIMEOUT:
-                        print("[Server] Heartbeat timed out.")
-                        break
-                    continue
-
-                if not data:
+                chunk = conn.recv(1024)
+                if not chunk:
+                    print("[Server] Client closed connection")
                     break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    cmd_line = line.decode('utf-8').strip()
+                    print(f"[Server] Received command: {cmd_line}")
 
-                text = data.decode(errors="ignore").strip()
-                print(f"[Server] ← {text}")
+                    if cmd_line == "RUN_CMM":
+                        self._active_conn = conn
+                        self.run_requested.emit()
 
-                if text == "PING":
-                    conn.sendall(b"PONG\n")
-                    last_hb = __import__("time").time()
-
-                elif text == "RUN_CMM":
-                    # wait until GUI calls `result_ready.emit(...)`
-                    loop = QEventLoop()
-                    result = {}
-                    def on_res(r): result["data"] = r; loop.quit()
-                    self.result_ready.connect(on_res)
-                    self.run_requested.emit()
-                    # safety timer
-                    t = QTimer()
-                    t.setSingleShot(True)
-                    t.timeout.connect(loop.quit)
-                    t.start(35000)
-                    loop.exec_()
-                    self.result_ready.disconnect(on_res)
-
-                    if "data" not in result:
-                        resp = "RESULT:FAIL\n"
+                        # Wait for GUI to run script and send result
+                        self._result_ready_event.clear()
+                        self._result_ready_event.wait(timeout=180)  # Wait max 180 seconds
+                        print("[Server] Result sent, waiting for next command...")
                     else:
-                        parsed = json.loads(result["data"])
-                        resp = "RESULT:OK\n" if parsed.get("status")=="success" else "RESULT:FAIL\n"
-                    conn.sendall(resp.encode())
-                    print(f"[Server] → {resp.strip()}")
-
-                else:
-                    conn.sendall(b"RESULT:UNKNOWN\n")
-
+                        conn.sendall(b"ERROR: UNKNOWN_COMMAND\n")
         except Exception as e:
-            print("[Server] Handler error:", e)
+            print(f"[Server] Connection handling error: {e}")
         finally:
-            conn.close()
-            self.connected.emit(False)
-            print("[Server] Disconnected", addr)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            self._active_conn = None
+
+
+    def send_result(self, msg: str):
+        if self._active_conn:
+            try:
+                self._active_conn.sendall((msg + "\n__END__\n").encode("utf-8"))
+            except Exception as e:
+                print(f"[Server] Error sending result: {e}")
+            # Don't close connection here to keep socket alive!
+            self._result_ready_event.set()  # Notify _handle_connection that sending is done
+
+    def _wait_for_result(self):
+        # Wait until send_result signals it has sent the data
+        self._result_ready_event.clear()
+        self._result_ready_event.wait(timeout=180) 

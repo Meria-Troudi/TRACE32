@@ -1,35 +1,26 @@
-#!/usr/bin/env python3
+#main.py
 import sys, os, glob, json, datetime, time, threading, psutil
 from PyQt5.QtWidgets import (
     QMainWindow, QApplication, QPushButton, QMessageBox, QFileDialog,
     QProgressBar, QAction, QTextEdit, QVBoxLayout, QDialog, QLabel
 )
-from PyQt5.QtCore import QTimer, pyqtSignal
+from PyQt5.QtCore import QTimer, pyqtSignal, QMetaObject, Qt
 from concurrent.futures import ThreadPoolExecutor
-
-from server import TcpServerThread  # Your TCP server thread class
-from run_cmm import run_cmm            # Function to run CMM scripts
-from cmm import Ui_MainWindow          # Your UI form
-from historyDialog import Ui_HistoryDialog  # History dialog UI
-
-
+from server import TcpServerThread
+from run_cmm import run_cmm
+from cmm import Ui_MainWindow
+from historyDialog import Ui_HistoryDialog
 class HistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ui = Ui_HistoryDialog()
         self.ui.setupUi(self)
-
         self.history_display = QTextEdit(readOnly=True)
-        self.button_layout = QVBoxLayout()
-        wrapper = QVBoxLayout()
-        wrapper.addLayout(self.button_layout)
-        wrapper.addWidget(QLabel("Log Preview:"))
-        wrapper.addWidget(self.history_display)
-        self.setLayout(wrapper)
-
+        self.btnhistory = self.ui.buttonLayout
+        self.ui.addWidget(QLabel("Log Preview:"))
+        self.ui.addWidget(self.history_display)
         self.ui.closeButton.clicked.connect(self.close)
         self._load_history_buttons()
-
     def _load_history_buttons(self):
         folder = "history_files"
         if not os.path.isdir(folder):
@@ -46,7 +37,6 @@ class HistoryDialog(QDialog):
                 label = name
             btn = QPushButton(label, clicked=self._make_loader(path))
             self.button_layout.addWidget(btn)
-
     def _make_loader(self, path):
         def loader():
             try:
@@ -59,135 +49,61 @@ class HistoryDialog(QDialog):
 
 class CmmGuiApp(QMainWindow):
     canoe_detected = pyqtSignal(bool)
-    result_ready = pyqtSignal(str)
-    run_requested = pyqtSignal()      # client asked for RUN_CMM
-
+    update_result_signal = pyqtSignal(str)  # Declare here
 
     def __init__(self):
+        self._result_container = None
+        self._event_loop = None
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        # Widgets
+        
         self.select_btn = self.ui.select
         self.run_btn = self.ui.run
         self.path_field = self.ui.path
-        self.log_out = self.ui.textEdit
+        self.result = self.ui.res
+        self.progresslabel = self.ui.progLabel
+        self.canstatus = self.ui.canStatusLabel
+        self.serverstatus = self.ui.serverStatusLabel
         self.progress = self.ui.progressBar
-        self.radio_on = self.ui.radioButton
-        self.radio_off = self.ui.radioButton_2
-        self.body_label = self.ui.bodyLabel
-        self.client_label = self.ui.canoeStatusLabel
-        self.server_label = self.ui.serverStatusLabel
-        self.ui.statusbar.addPermanentWidget(self.client_label)
-        self.ui.statusbar.addPermanentWidget(self.server_label)
-        # State
+        self.statusBar().addPermanentWidget(self.ui.canStatusLabel)
+        self.statusBar().addPermanentWidget(self.ui.serverStatusLabel)
+
         self.selected_file = None
         self._start_time = None
         self.history = []
         self._dots = 0
-        self._canoe_running = False
 
-        # Initial UI state
-        self.log_out.setReadOnly(True)
-        self.select_btn.setEnabled(False)
-        self.run_btn.setEnabled(False)
+        self.result.setReadOnly(True)
         self.path_field.setText("No file selected")
         self._hide_outputs()
-
-        # Thread pool and timer
         self.pool = ThreadPoolExecutor(max_workers=1)
-        self.timer = QTimer(self); self.timer.timeout.connect(self._update_progress)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update_progress)
 
-        # Menu
         self.ui.menuSettings.addAction(QAction("Save Log…", self, triggered=self._save_log))
         self.ui.menuHistory.addAction(QAction("Show History…", self, triggered=self._show_history))
         self.ui.actionExit.triggered.connect(self.close)
 
-        # Connections
         self.select_btn.clicked.connect(self._select_file)
-        self.run_btn.clicked.connect(self.on_run_btn_clicked)
-
-        self.canoe_detected.connect(self._on_canoe)
-        threading.Thread(target=self._detect_canoe_loop, daemon=True).start()
-
-        # TCP‑server thread
+        self.run_btn.clicked.connect(lambda: self._run_and_report(local=True))
+        
         self.tcp = TcpServerThread()
         self.tcp.connected.connect(self._on_server_status)
-        self.tcp.connected.connect(self._on_canoe_process)
-
         self.tcp.run_requested.connect(self._on_run_requested)
-        self.result_ready.connect(self._display_result)
+        self.update_result_signal.connect(self._update_result_in_gui)
+
         self.tcp.start()
-        self.tcp.run_requested.connect(self.on_server_request_cmm)
-    def on_server_request_cmm(self):
-        # Instead of launching the CMM directly here...
-        QMessageBox.information(self, "Server Request", "Server requested to run CMM.\nPlease select the file and press Run.")
-        self._allow_user_to_choose_cmm = True
-        self.ui.run_btn.setEnabled(True)
 
-    def on_run_btn_clicked(self):
-        if not self._allow_user_to_choose_cmm:
-            QMessageBox.warning(self, "Not Allowed", "Waiting for server trigger to run CMM.")
-            return
-
-        if not self.selected_file:
-            QMessageBox.warning(self, "Missing File", "Please choose a CMM file before running.")
-            return
-
-        self._run_and_report()
-        self._run_cmm(self.selected_cmm_path)
-        self._allow_user_to_choose_cmm = False
-        self.ui.run_btn.setEnabled(False)
+        threading.Thread(target=self._detect_canoe_loop, daemon=True).start()
 
     def _hide_outputs(self):
         self.progress.hide()
-        self.body_label.hide()
-        self.log_out.hide()
+        self.result.hide()
 
     def _show_outputs(self):
         self.progress.show()
-        self.body_label.show()
-        self.log_out.show()
-
-    def _on_canoe(self, up: bool):
-        self.radio_on.setChecked(up)
-        self.radio_off.setChecked(not up)
-        self._refresh_buttons()
-
-
-    def _refresh_buttons(self):
-        ok = self.radio_on.isChecked()
-        self.select_btn.setEnabled(ok)
-        self.run_btn.setEnabled(ok and hasattr(self, "selected_file"))
-
-
-    def _detect_canoe_loop(self):
-        prev = False
-        while True:
-            found = any("Canoe" in (p.info.get("name") or "") for p in psutil.process_iter(["name"]))
-            if found != prev:
-                prev = found
-                self.canoe_detected.emit(found)
-            time.sleep(5)
-
-    def _on_canoe_process(self, running: bool):
-        icon = "🟢" if running else "🔴"
-        self.client_label.setText(f"CANoe: {icon}")
-        self._update_run_button_state()
-
-    def _on_server_status(self, connected: bool):
-        icon = "🟢" if connected else "🔴"
-        self.server_label.setText(f"Server: {icon}")
-        self._update_run_button_state()
-
-    def _update_run_button_state(self):
-        canoe_ok = "🟢" in self.client_label.text()
-        server_ok = "🟢" in self.server_label.text()
-        has_file = bool(self.selected_file)
-        self.select_btn.setEnabled(canoe_ok and server_ok)
-        self.run_btn.setEnabled(canoe_ok and server_ok and has_file)
-
-
+        self.result.show()
 
     def _select_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select CMM Script", "", "CMM Files (*.cmm);;All Files (*)")
@@ -195,78 +111,73 @@ class CmmGuiApp(QMainWindow):
             self.selected_file = path
             self.path_field.setText(path)
             self.statusBar().showMessage(f"Selected: {os.path.basename(path)}", 3000)
-            self.run_btn.setEnabled(True)
-            self._refresh_buttons()
-    def _confirm_run(self):
+
+    def _on_result_ready(self, res):
+        self.result.setPlainText(res)
+        self.statusBar().showMessage("Result received from CAPL command")
+
+
+    def _run_and_report(self, local):
         if not self.selected_file:
-            QMessageBox.warning(self, "No file", "Please select a CMM file first.")
+            QMessageBox.warning(self, "No File Selected",
+                                "Please select a CMM script file first.")
             return
-        if QMessageBox.question(self, "Confirm Run", f"Run this script?\n{self.selected_file}", QMessageBox.Ok | QMessageBox.Cancel) == QMessageBox.Ok:
-            self._run_and_report()
 
-    def _on_run_requested(self):
-        QMessageBox.information(self, "Client Request", "Client requested to run a CMM script.\nPlease select a file and press Run.")
-        self.select_btn.setEnabled(True)
-        self.run_btn.setEnabled(True)
-        self._allow_user_to_choose_cmm = True
-        self.select_btn.setEnabled(True)
-        self.run_btn.setEnabled(bool(self.selected_file))
-
-        def poll():
-            if fut.done():
-                self.timer.stop()
-                res = fut.result()
-                self.result_ready.emit(res)
-            else:
-                self._dots = (self._dots+1) % 4
-                self.progress.setValue(min(self._dots*25, 100))
-                QTimer.singleShot(500, poll)
-
-        self._hide_outputs(); self._show_outputs()
-        self.progress.setValue(0); self._dots=0
-        self.timer.start(500)
-        poll()
-
-    def _run_and_report(self):
-        self.result_ready.emit("")
-        self._hide_outputs()
         self._show_outputs()
         self._start_time = time.monotonic()
-        self.log_out.setPlainText("⏳ Running script…")
+        self.result.setPlainText("⏳ Running script…")
         self.progress.setValue(0)
         self.statusBar().showMessage("Running script…")
 
         def task():
-            try:
-                return run_cmm(self.selected_file)
-            except Exception as e:
-                return json.dumps({"status": "failure", "message": str(e)})
+                print("[Task] Starting run_cmm")
+                res = run_cmm(self.selected_file)
+                self.update_result_signal.emit(res)  # ✔ Correct: emit to main thread
+
+                print("[Task] run_cmm finished")
+                return res
+
 
         future = self.pool.submit(task)
 
-        def check():
-            if future.done():
-                try:
-                    result_json = future.result()
-                except Exception as e:
-                    result_json = json.dumps({"status": "failure", "message": str(e)})
-                self.result_ready.emit(result_json)
-                self.timer.stop()
-            else:
-                elapsed = time.monotonic() - self._start_time
-                if elapsed > 30:
-                    future.cancel()
-                    self.result_ready.emit(json.dumps({"status": "failure", "message": "Timeout"}))
-                    self.timer.stop()
-                else:
-                    pct = min(int((elapsed / 30) * 95), 95)
-                    self.progress.setValue(pct)
-                    self._dots = (self._dots + 1) % 4
-                    self.statusBar().showMessage("Running script" + "." * self._dots)
-                    QTimer.singleShot(500, check)
+        def monitor():
+            print("[Monitor] Monitoring future...")
+            while not future.done():
+                time.sleep(0.2)
+            res = future.result()
+            print("[Monitor] Future done, sending result...")
+            self.tcp.send_result(res)  # Directly send result back via server thread
+    
+        threading.Thread(target=monitor, daemon=True).start()
+        
 
-        check()
+        
+    def _update_result_in_gui(self, text):
+        self.progress.setValue(100)
+        self.result.setPlainText(text)
 
+        self.statusBar().showMessage("Result received from script.")
+        
+    def _on_run_requested(self):
+         QMessageBox.information(self, "Run CMM Request",
+            "Server requested to run a CMM script.\n"
+            "Please select a file and click Run manually.")
+         
+    def _detect_canoe_loop(self):
+        prev = True
+        while True:
+            found = any("Canoe" in (p.info.get("name") or "") for p in psutil.process_iter(["name"]))
+            if found != prev:
+                prev = found
+                self._on_canoe_status(found)
+            time.sleep(5)
+
+    def _on_canoe_status(self, running: bool):
+        icon = "🟢" if running else "🔴"
+        self.ui.canStatusLabel.setText(f"CANoe: {icon}")
+    def _on_server_status(self, connected: bool):
+        icon = "🟢" if connected else "🔴"
+        self.ui.serverStatusLabel.setText(f"Server: {icon}")
     def _update_progress(self):
         if not self._start_time:
             return
@@ -276,30 +187,7 @@ class CmmGuiApp(QMainWindow):
         self._dots = (self._dots + 1) % 4
         self.statusBar().showMessage("Running script" + "." * self._dots)
 
-    def _display_result(self, result_json):
-        self.timer.stop()
-        elapsed = time.monotonic() - (self._start_time or time.monotonic())
-        self.progress.setValue(100)
-        self.statusBar().showMessage(f"Completed in {elapsed:.1f}s", 4000)
-
-        try:
-            parsed = json.loads(result_json)
-            status = parsed.get("status", "unknown")
-            message = parsed.get("message", "")
-            logf = parsed.get("logFile", "")
-        except Exception:
-            status, message, logf = "error", result_json, ""
-
-        ts = str(int(datetime.datetime.now().timestamp()))
-        name = os.path.basename(self.selected_file or "run")
-        fn = f"{name}_{ts}.log"
-        os.makedirs("history_files", exist_ok=True)
-        with open(os.path.join("history_files", fn), "w", encoding="utf-8") as f:
-            f.write(f"{message}\nStatus: {status}\nLog File: {logf}")
-
-        self.history.append((ts, status, message))
-        self.log_out.setPlainText(f"{message}\nStatus: {status}\nLog File: {logf}")
-
+    
     def _save_log(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save Log As…", "cmm_log.txt", "Text Files (*.txt)")
         if path:

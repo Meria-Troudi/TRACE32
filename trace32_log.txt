@@ -1,2 +1,2 @@
-FLASHING DONE
+file 'C:\Users\meria\Desktop\output\C6-sample_Regression_242502\PSA_E-toggle_C6-sample_Combined_BEV_242502.hex' (IntelHex) loaded.
 ⚠️ Timeout: script did not complete in time.

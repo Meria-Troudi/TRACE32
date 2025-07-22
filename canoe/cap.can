@@ -1,0 +1,109 @@
+/*@!Encoding:1252*/
+
+variables
+{
+  const dword INVALID = ~0;
+  dword sock = INVALID;
+  char recvBuf[1024];
+  msTimer retryTimer;
+  dword copyLen;
+  long pos;
+  char cmd[512];
+  long len;
+  char part1[512]="RUN_CMM|%s\n" ;
+  char part2[512]="C:\\Users\\meria\\Desktop\\output\\C6-sample_Regression_242502\\PSA_E-toggle_C6-sample_Combined_BEV_242502.cmm" ;
+}
+
+on start
+{
+  write("?? Launching Python CLI server...");
+  sysExec("C:\\Program Files\\Python311\\python.exe", "CLI.py", "C:\\Users\\meria\\Desktop\\TRACE32_TEST\\TRACE32");
+  setTimer(retryTimer, 2000); 
+}
+
+on timer retryTimer
+{
+  cancelTimer(retryTimer);
+  if (sock != INVALID) return;
+  write("?? Attempting TcpConnect to Python server...");
+  sock = TcpOpen(0, 0);  // unbound client
+  if (sock == INVALID) {
+    write("? TcpOpen failed: %d", IpGetLastError());
+    setTimer(retryTimer, 5000);
+    return;
+  }
+
+  TcpConnect(sock, 0x0100007F, 12345);  // async connect to 127.0.0.1:12345
+}
+
+
+onTcpConnect(dword socket, long result)
+{if (socket != sock) return;
+  if (result != 0)
+  {
+    write("?? TcpConnect failed (result=%d)", result);
+    TcpClose(sock);
+    sock = INVALID;
+    setTimer(retryTimer, 5000);
+    return;
+  }
+
+  write("? Connected to Python CLI");
+  TcpReceive(sock, recvBuf, elcount(recvBuf)); // Begin async receive
+  TcpSend(sock, "PING\n", strLen("PING\n"));   // Optional handshake
+}
+
+// Send CMM path on key press
+on key 'R'
+{
+  if (sock == INVALID)
+  {
+    write("?? Not connected yet. Cannot send CMM.");
+    return;
+  }
+
+
+len = snprintf(cmd, elcount(cmd), "RUN_CMM|%s\n", "C:\\Users\\meria\\Desktop\\output\\C6-sample_Regression_242502\\PSA_E-toggle_C6-sample_Combined_BEV_242502.cmm");
+
+write("?? Sending command: %s (len=%d)", cmd, len);
+
+
+  write("?? Sending command: %s", cmd);
+  TcpSend(sock, cmd, strlen(cmd));
+}
+
+// Handle all incoming messages
+onTcpReceive(dword socket, long result,
+             dword addr, dword port,
+             char buffer[], dword size)
+{
+  if (socket != sock) return;
+
+  if (result != 0 || size <= 0)
+  {
+    write("? Receive error or disconnect (result=%d, size=%d)", result, size);
+    TcpClose(sock);
+    sock = INVALID;
+    setTimer(retryTimer, 5000);
+    return;
+  }
+
+  copyLen = size < elcount(recvBuf) ? size : elcount(recvBuf)-1;
+  memcpy(recvBuf, buffer, copyLen);
+  recvBuf[copyLen] = 0;
+
+  write("?? Received from Python: %s", recvBuf);
+
+  if (strstr(recvBuf, "RESULT:") > 0)
+  {
+    write("? Execution finished — result received.");
+  }
+
+  TcpReceive(socket, recvBuf, elcount(recvBuf)); // Keep listening
+}
+
+on preStop
+{
+  if (sock != INVALID)
+    TcpClose(sock);
+}

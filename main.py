@@ -8,8 +8,9 @@ from PyQt5.QtCore import QTimer, pyqtSignal, QMetaObject, Qt
 from concurrent.futures import ThreadPoolExecutor
 from server import TcpServerThread
 from run_cmm import run_cmm
-from cmm import Ui_MainWindow
-from historyDialog import Ui_HistoryDialog
+from gui.cmm import Ui_MainWindow
+from gui.historyDialog import Ui_HistoryDialog
+_selected_cmm_path = None
 class HistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,8 +51,9 @@ class HistoryDialog(QDialog):
 class CmmGuiApp(QMainWindow):
     canoe_detected = pyqtSignal(bool)
     update_result_signal = pyqtSignal(str)  # Declare here
-
+    
     def __init__(self):
+        self._capl_triggered = False 
         self._result_container = None
         self._event_loop = None
         super().__init__()
@@ -87,12 +89,10 @@ class CmmGuiApp(QMainWindow):
 
         self.select_btn.clicked.connect(self._select_file)
         self.run_btn.clicked.connect(lambda: self._run_and_report(local=True))
-        
-        self.tcp = TcpServerThread()
+        def get_selected_file():
+           return _selected_cmm_path
+        self.tcp = TcpServerThread(get_selected_file)
         self.tcp.connected.connect(self._on_server_status)
-        self.tcp.run_requested.connect(self._on_run_requested)
-        self.update_result_signal.connect(self._update_result_in_gui)
-
         self.tcp.start()
 
         threading.Thread(target=self._detect_canoe_loop, daemon=True).start()
@@ -104,14 +104,16 @@ class CmmGuiApp(QMainWindow):
     def _show_outputs(self):
         self.progress.show()
         self.result.show()
+  
 
+  
     def _select_file(self):
+        global _selected_cmm_path
         path, _ = QFileDialog.getOpenFileName(self, "Select CMM Script", "", "CMM Files (*.cmm);;All Files (*)")
         if path:
-            self.selected_file = path
+            _selected_cmm_path = path
             self.path_field.setText(path)
             self.statusBar().showMessage(f"Selected: {os.path.basename(path)}", 3000)
-
     def _on_result_ready(self, res):
         self.result.setPlainText(res)
         self.statusBar().showMessage("Result received from CAPL command")
@@ -157,11 +159,12 @@ class CmmGuiApp(QMainWindow):
         self.result.setPlainText(text)
 
         self.statusBar().showMessage("Result received from script.")
-        
+        self.tcp.send_result(text)
     def _on_run_requested(self):
+         self._capl_triggered = True  # <-- Flag that CAPL asked for this run
          QMessageBox.information(self, "Run CMM Request",
-            "Server requested to run a CMM script.\n"
-            "Please select a file and click Run manually.")
+            "CAPL requested to run a CMM script.\n"
+        "Please select a file and click Run.")
          
     def _detect_canoe_loop(self):
         prev = True

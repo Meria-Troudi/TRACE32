@@ -14,7 +14,7 @@ def init_trace32():
     for _ in range(20):
         if (
             trace32_api.T32_Config(b"NODE=", b"localhost") == 0 and
-            trace32_api.T32_Config(b"PORT=", b"40000") == 0 and
+            trace32_api.T32_Config(b"PORT=", b"20000") == 0 and
             trace32_api.T32_Config(b"PACKLEN=", b"1024") == 0 and
             trace32_api.T32_Init() == 0
         ):

@@ -1,69 +1,32 @@
-# server.py
-import socket
-from PyQt5.QtCore import QThread, pyqtSignal
-from run_cmm import run_cmm
+# test_runcmm.py
 
-HOST = "127.0.0.1"
-PORT = 12345
+import runpy
+import os
+import json
 
-class TcpServerThread(QThread):
-    connected = pyqtSignal(bool)
+# 1. Load your runcmm.py as a module
+mod = runpy.run_path(r"C:\Users\meria\Desktop\TRACE32_TEST\TRACE32\example.cmm")
+run_cmm = mod["run_cmm"]
 
-    def __init__(self, get_file_path_callable):
-        super().__init__()
-        self.get_file_path = get_file_path_callable
-        self._running = True
+def test_run_cmm():
+    # 2. Prepare a dummy CMM file
+    dummy = os.path.abspath("example.cmm")
+    if not os.path.exists(dummy):
+        with open(dummy, "w") as f:
+            f.write('PRINT "Hello TRACE32"\nENDDO\n')
 
-    def run(self):
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind((HOST, PORT))
-        srv.listen(1)
-        srv.settimeout(1.0)
-        self.connected.emit(False)
+    print("▶ Invoking run_cmm on:", dummy)
+    result = run_cmm(dummy)
 
-        while self._running:
-            try:
-                conn, addr = srv.accept()
-            except socket.timeout:
-                continue
-            self.connected.emit(True)
-            print(f"[Server] Connected from {addr}")
+    # 3. Parse & display
+    try:
+        data = json.loads(result)
+        print("✔ Parsed JSON result:")
+        for k,v in data.items():
+            print(f"  {k}: {v}")
+    except Exception:
+        print("⚠️  Non-JSON or error output:")
+        print(result)
 
-            try:
-                buf = b""
-                while True:
-                    data = conn.recv(1024)
-                    if not data:
-                        break
-                    buf += data
-                    if b"\n" not in buf:
-                        continue
-                    line, buf = buf.split(b"\n", 1)
-                    cmd = line.decode().strip()
-                    print(f"[Server] ← {cmd}")
-
-                    if cmd == "RUN_CMM":
-                        path = self.get_file_path()
-                        if not path:
-                            conn.sendall(b"ERROR:NO_FILE_SELECTED\n")
-                            continue
-
-                        # 1️⃣ Block here until run_cmm() returns
-                        print("[Server] Running CMM…")
-                        result = run_cmm(path)
-                        payload = result.replace("\n", "\\n")  # escape newlines if you like
-                        conn.sendall(f"RESULT:{payload}\n".encode())
-
-                    else:
-                        conn.sendall(b"ERROR:UNKNOWN_COMMAND\n")
-
-            except Exception as e:
-                print(f"[Server] Error handling client: {e}")
-            finally:
-                conn.close()
-                print(f"[Server] Disconnected {addr}")
-                self.connected.emit(False)
-
-        srv.close()
-        print("[Server] Stopped.")
+if __name__ == "__main__":
+    test_run_cmm()

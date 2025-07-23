@@ -1,107 +1,101 @@
 /*@!Encoding:1252*/
-
 variables
 {
   const dword INVALID = ~0;
-  dword sock = INVALID;
-  char recvBuf[1024];
-  msTimer retryTimer;
-  dword copyLen;
-  long pos;
-  char cmd[512];
-  long len;
-  char part1[512]="RUN_CMM|%s\n" ;
-  char part2[512]="C:\\Users\\meria\\Desktop\\output\\C6-sample_Regression_242502\\PSA_E-toggle_C6-sample_Combined_BEV_242502.cmm" ;
+  dword    sock  = INVALID;
+  char     buf[1024];
+  char     pathBuf[512];
+  char     msg[600];
+  int      recvLen;int cnt;
+enum {IDLE, CONNECT, WAIT, RUNNING} state = IDLE;
 }
 
 on start
 {
-  write("?? Launching Python CLI server...");
+  sysSetVariableString(sysvar::cmm::path, "");
+  sysSetVariableString(sysvar::cmm::result, "");
+  write("?? Starting Python server…");
   sysExec("C:\\Program Files\\Python311\\python.exe", "CLI.py", "C:\\Users\\meria\\Desktop\\TRACE32_TEST\\TRACE32");
-  setTimer(retryTimer, 2000); 
 }
 
-on timer retryTimer
+on sysvar cmm::path
 {
-  cancelTimer(retryTimer);
-  if (sock != INVALID) return;
-  write("?? Attempting TcpConnect to Python server...");
-  sock = TcpOpen(0, 0);  // unbound client
-  if (sock == INVALID) {
-    write("? TcpOpen failed: %d", IpGetLastError());
-    setTimer(retryTimer, 5000);
-    return;
+  char newPath[1024];
+  sysGetVariableString(sysvar::cmm::path, newPath, elcount(newPath));
+ if (newPath[0] == '\0'){
+    write(" Path cleared, back to IDLE");
+    state = IDLE;return;
   }
+  if (newPath[0] != '\0' && state == IDLE){
+    cnt = sysGetVariableInt(sysvar::cmm::count);
+    if (cnt < 1) cnt = 1;
 
-  TcpConnect(sock, 0x0100007F, 12345);  // async connect to 127.0.0.1:12345
-}
+    write(" Path set to: %s \n count:%d", newPath,cnt);
+    if (sock != INVALID) TcpClose(sock); // Clean any old connection
+    write("?? Opening TCP connection…");
 
-
-onTcpConnect(dword socket, long result)
-{if (socket != sock) return;
-  if (result != 0)
-  {
-    write("?? TcpConnect failed (result=%d)", result);
-    TcpClose(sock);
-    sock = INVALID;
-    setTimer(retryTimer, 5000);
-    return;
+    sock = TcpOpen(0,0);
+    TcpConnect(sock, 0x0100007F, 12345);
+    state = CONNECT;
   }
-
-  write("? Connected to Python CLI");
-  TcpReceive(sock, recvBuf, elcount(recvBuf)); // Begin async receive
-  TcpSend(sock, "PING\n", strLen("PING\n"));   // Optional handshake
+ 
 }
-
-// Send CMM path on key press
-on key 'R'
+onTcpConnect(dword s, long result)
 {
-  if (sock == INVALID)
-  {
-    write("?? Not connected yet. Cannot send CMM.");
-    return;
+  if (s != sock) return;
+  if (result != 0){
+    write("? Connect failed (err=%d)", result);
+    TcpClose(sock); sock = INVALID;
+    state = IDLE;
+     return;
+  }else{
+    write("? TCP connected");
+    TcpReceive(sock, buf, elcount(buf));
+    TcpSend(sock, "PING\n", 5);
+    state = WAIT;
   }
-
-
-len = snprintf(cmd, elcount(cmd), "RUN_CMM|%s\n", "C:\\Users\\meria\\Desktop\\output\\C6-sample_Regression_242502\\PSA_E-toggle_C6-sample_Combined_BEV_242502.cmm");
-
-write("?? Sending command: %s (len=%d)", cmd, len);
-
-
-  write("?? Sending command: %s", cmd);
-  TcpSend(sock, cmd, strlen(cmd));
 }
 
-// Handle all incoming messages
-onTcpReceive(dword socket, long result,
-             dword addr, dword port,
-             char buffer[], dword size)
+void OnTcpReceive(dword s, long result,
+                  dword addr, dword port,
+                  char buffer[], dword size)
 {
-  if (socket != sock) return;
+  if (s != sock) return;
 
   if (result != 0 || size <= 0)
   {
-    write("? Receive error or disconnect (result=%d, size=%d)", result, size);
-    TcpClose(sock);
-    sock = INVALID;
-    setTimer(retryTimer, 5000);
+    write("?? Disconnected (r=%d,s=%d)", result, size);
+    TcpClose(sock); sock = INVALID;
+    state = IDLE;
     return;
   }
 
-  copyLen = size < elcount(recvBuf) ? size : elcount(recvBuf)-1;
-  memcpy(recvBuf, buffer, copyLen);
-  recvBuf[copyLen] = 0;
+  recvLen = size < elcount(buf) ? size : elcount(buf)-1;
+  memcpy(buf, buffer, recvLen);
+  buf[recvLen] = '\0';
 
-  write("?? Received from Python: %s", recvBuf);
+  write("?? From Python: %s", buf);
 
-  if (strstr(recvBuf, "RESULT:") > 0)
+  if (state == WAIT && strncmp(buf, "PONG", 4) == 0)
   {
-    write("? Execution finished — result received.");
+    sysGetVariableString(sysvar::cmm::path, pathBuf, elcount(pathBuf));
+    snprintf(msg, elcount(msg), "RUN_CMM|%s|%d\n", pathBuf, cnt);
+
+    write("?? Sending RUN_CMM: %s", msg);
+    TcpSend(sock, msg, strlen(msg));
+    state = RUNNING; // <-- FIXED: Wait for result now
+  }
+  else if (state == RUNNING)
+  {
+    sysSetVariableString(sysvar::cmm::result, buf);
+    write("? Result stored from Python. Returning to IDLE.");
+    state = IDLE;
   }
 
-  TcpReceive(socket, recvBuf, elcount(recvBuf)); // Keep listening
+  TcpReceive(sock, buf, elcount(buf));
 }
 
+// 7) Cleanup
 on preStop
 {
   if (sock != INVALID)

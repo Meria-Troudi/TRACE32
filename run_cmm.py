@@ -14,7 +14,7 @@ def init_trace32():
     for _ in range(20):
         if (
             trace32_api.T32_Config(b"NODE=", b"localhost") == 0 and
-            trace32_api.T32_Config(b"PORT=", b"20000") == 0 and
+            trace32_api.T32_Config(b"PORT=", b"40000") == 0 and
             trace32_api.T32_Config(b"PACKLEN=", b"1024") == 0 and
             trace32_api.T32_Init() == 0
         ):
@@ -38,6 +38,7 @@ def collect_messages(trace32_api, timeout=TIMEOUT, inactivity_timeout=INACTIVITY
         if now - start > timeout:
             messages.append("⚠️ Timeout: script did not complete in time.")
             break
+    
         if trace32_api.T32_GetMessage(buffer, ctypes.byref(status)) == 0 and buffer.value:
             msg = buffer.value.decode("utf-8", errors="ignore").strip()
             if msg and msg not in seen:

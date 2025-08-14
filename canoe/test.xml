@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!--!DOCTYPE testmodule SYSTEM "C:\ibb\TestDesigner\Templates\Script\testmodule.dtd"-->
+<testmodule title="" version="" schemaLocation="http://www.vector-informatik.de/CANoe/TestModule/1.16 testmodule_1.16.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.vector-informatik.de/CANoe/TestModule/1.16">
+<!--
+ 	Timestamp: 30/07/2025 14:39:04
+
+ 	Numbering: 1
+ 	Test: 1
+ 	Description:  A default test case 
+	
+	Compiler information:
+	===========================================
+	MQHSC version:  2.1.2.0 86c39069 (Branch: (no branch))
+	Library verion: refs/heads/master / 0cd1978c19920b9fc816463a98072b08fb551523
+	===========================================
+
+-->
+<testgroup title="UniqueId: 1; Numbering: 1">
+ <!-- Preparation block for creating a XML variable with the test case id value -->
+ <preparation>	
+  <vardef name="CurrentTestCaseId" type="string" default="">1</vardef>
+ </preparation>
+   <testcase title="Comment n.a." ident="00001">
+    <capltestfunction name="TF_StartflashMultipleTimes" title="start Vflash multiple times: XX.1.1">
+      <caplparam name="PathFlashFile" type="string">C:\Users\meria\Desktop\output\C6-sample_Regression_242502\PSA_E-toggle_C6-sample_Combined_BEV_242502.cmm</caplparam>
+      <caplparam name="iteration" type="int">1</caplparam>
+      <caplparam name="status" type="int">1</caplparam>
+    </capltestfunction>
+  </testcase>
+
+
+
+
+</testgroup>
+</testmodule>

@@ -1,9 +1,15 @@
+# CLI.py
 import socket
 import threading
-import json
+import os
+import csv
+from datetime import datetime
 from run_cmm import run_cmm
+import auto_config
 
-HOST, PORT = "127.0.0.1", 12345
+HOST       =  "127.0.0.1"
+PORT       = 12345
+
 def handle_client(conn, addr):
     print(f"[PYTHON] Client connected: {addr}")
     try:
@@ -20,7 +26,7 @@ def handle_client(conn, addr):
                 if msg == "PING":
                     conn.sendall(b"PONG")
                     continue
-
+                
                 if msg.startswith("RUN_CMM|"):
                     parts = msg.split("|", 2)
                     if len(parts) != 3:
@@ -33,25 +39,24 @@ def handle_client(conn, addr):
                         conn.sendall(b"ERROR: Invalid count\n")
                         continue
 
-                    output_accum = []
+                    all_out = []
                     for i in range(count):
-                        print(f"[PYTHON] Running {path} ({i+1}/{count})")
-                        try:
-                            result = run_cmm(path)
-                            output_accum.append(f"[{i+1}] {result}")
-                            print(f"[PYTHON] Result {i+1}: {result}")   
-                        except Exception as e:
-                            output_accum.append(f"[{i+1}] ERROR: {e}")
+                        print(f"[PYTHON] Running [{i+1}/{count}] {path}")
+                      
+                        res = run_cmm(path)
+                    
 
-                    final_response = "\n".join(output_accum)
-                        
-                    conn.sendall(final_response.encode())
+                        all_out.append(f"[{i+1}] {res} \n")
+                        print(f"[PYTHON] Collected output: {len(all_out)} messages")
+                    final = "\n".join(all_out) + "\n<<<EOT>>>\n"
+                    conn.sendall(final.encode())
 
                 else:
-                    conn.sendall(b"ERROR: Unknown command\n")
+                    conn.sendall(f"ERROR: Unknown command '{msg}'\n".encode())
 
     except Exception as e:
         print(f"[PYTHON] Exception with client {addr}: {e}")
+
 
 def start_server():
     print("[PYTHON] Server starting...")
@@ -66,4 +71,4 @@ def start_server():
             threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
 
 if __name__ == "__main__":
-    start_server()
+        start_server()  # now start listening for clients

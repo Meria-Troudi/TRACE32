@@ -1,103 +1,106 @@
 /*@!Encoding:1252*/
-variables
-{
+variables {
   const dword INVALID = ~0;
-  dword    sock  = INVALID;
-  char     buf[1024];
-  char     pathBuf[512];
-  char     msg[600];
-  int      recvLen;int cnt;
-enum {IDLE, CONNECT, WAIT, RUNNING} state = IDLE;
+  dword sock = INVALID;
+  char buf[1024];
+  char recvBuf[2048]; char prev[1024];
+  char pathBuf[1024];
+  char msg[600];
+  int recvLen = 0;
+  int cnt;
+  long i;
+  long eotPos;
+  enum {N_IDLE, N_CONNECT, N_WAIT, N_RUNNING} nodeState = N_IDLE;
 }
 
-on start
-{
-  sysSetVariableString(sysvar::cmm::path, "");
-  sysSetVariableString(sysvar::cmm::result, "");
-  write("?? Starting Python server…");
-  sysExec("C:\\Program Files\\Python311\\python.exe", "CLI.py", "C:\\Users\\meria\\Desktop\\TRACE32_TEST\\TRACE32");
+on start {
+  write("? Node start: launching Python server");
+  sysExec("C:\\Program Files\\Python311\\pythonw.exe", "CLI.py", "C:\\Users\\meria\\Desktop\\TRACE32_TEST\\TRACE32");
+
+
 }
 
-on sysvar cmm::path
-{
-  char newPath[1024];
-  sysGetVariableString(sysvar::cmm::path, newPath, elcount(newPath));
- if (newPath[0] == '\0'){
-    write(" Path cleared, back to IDLE");
-    state = IDLE;return;
-  }
-  if (newPath[0] != '\0' && state == IDLE){
-    cnt = sysGetVariableInt(sysvar::cmm::count);
-    if (cnt < 1) cnt = 1;
+// NEW ENTRY: Trigger only when run == 1 and state is valid
+on sysvar cmm::run {
+  if (sysGetVariableInt(sysvar::cmm::run) != 1) return;
 
-    write(" Path set to: %s \n count:%d", newPath,cnt);
-    if (sock != INVALID) TcpClose(sock); // Clean any old connection
-    write("?? Opening TCP connection…");
 
-    sock = TcpOpen(0,0);
-    TcpConnect(sock, 0x0100007F, 12345);
-    state = CONNECT;
-  }
- 
-}
-onTcpConnect(dword s, long result)
-{
-  if (s != sock) return;
-  if (result != 0){
-    write("? Connect failed (err=%d)", result);
-    TcpClose(sock); sock = INVALID;
-    state = IDLE;
-     return;
-  }else{
-    write("? TCP connected");
-    TcpReceive(sock, buf, elcount(buf));
-    TcpSend(sock, "PING\n", 5);
-    state = WAIT;
-  }
-}
-
-void OnTcpReceive(dword s, long result,
-                  dword addr, dword port,
-                  char buffer[], dword size)
-{
-  if (s != sock) return;
-
-  if (result != 0 || size <= 0)
-  {
-    write("?? Disconnected (r=%d,s=%d)", result, size);
-    TcpClose(sock); sock = INVALID;
-    state = IDLE;
+  sysGetVariableString(sysvar::cmm::path, pathBuf, 512);
+  if (pathBuf[0]=='\0') {
+    write("? run: path empty");
     return;
   }
 
-  recvLen = size < elcount(buf) ? size : elcount(buf)-1;
-  memcpy(buf, buffer, recvLen);
-  buf[recvLen] = '\0';
+  cnt = sysGetVariableInt(sysvar::cmm::count);
+  write("? Node RUN trigger: '%s', count=%d", pathBuf, cnt);
+  if (sock != INVALID) TcpClose(sock);
+  sock = TcpOpen(0, 0);
+  TcpConnect(sock, 0x0100007F, 12345);
+  nodeState = N_CONNECT;
+}
 
-  write("?? From Python: %s", buf);
-
-  if (state == WAIT && strncmp(buf, "PONG", 4) == 0)
-  {
-    sysGetVariableString(sysvar::cmm::path, pathBuf, elcount(pathBuf));
-    snprintf(msg, elcount(msg), "RUN_CMM|%s|%d\n", pathBuf, cnt);
-
-    write("?? Sending RUN_CMM: %s", msg);
-    TcpSend(sock, msg, strlen(msg));
-    state = RUNNING; // <-- FIXED: Wait for result now
+// TCP connect
+onTcpConnect(dword s, long result) {
+  if (s != sock) return;
+  write("? Node TCP connect: result=%d", result);
+  if (result != 0) {
+    write("   Connect failed");
+    TcpClose(sock); sock = INVALID; nodeState = N_IDLE;
+  } else {
+    TcpReceive(sock, buf, elcount(buf));
+    TcpSend(sock, "PING\n", 5);
+    nodeState = N_WAIT;
   }
-  else if (state == RUNNING)
-  {
-    sysSetVariableString(sysvar::cmm::result, buf);
-    write("? Result stored from Python. Returning to IDLE.");
-    state = IDLE;
+}
+
+// TCP receive
+void OnTcpReceive(dword s, long result, dword addr, dword port, char buffer[], dword size) {
+  if (s != sock) return;
+  
+  if (result != 0 || size <= 0) {
+    write("   Disconnected");
+    TcpClose(sock); sock = INVALID; nodeState = N_IDLE;
+    return;
+  }
+
+  for (i = 0; i < size; i++) recvBuf[recvLen + i] = buffer[i];
+  recvLen += size;
+  recvBuf[recvLen] = '\0';
+  write("   Accumulated: '%s'", recvBuf);
+
+  if (nodeState == N_WAIT && strncmp(recvBuf, "PONG", 4) == 0) {
+    sysGetVariableString(sysvar::cmm::path, pathBuf, 512);
+    snprintf(msg, 600, "RUN_CMM|%s|%d\n", pathBuf, cnt);
+    write("   Sending: %s", msg);
+    TcpSend(sock, msg, strlen(msg));
+    nodeState = N_RUNNING;
+    recvLen = 0;
+  }
+  else if (nodeState == N_RUNNING) {
+    eotPos = strstr(recvBuf, "<<<EOT>>>");
+    if (eotPos != 0) {
+      recvBuf[eotPos] = '\0';  // terminate at <<<EOT>>>
+      
+     
+      sysSetVariableString(sysvar::cmm::result, recvBuf);
+          write(" Result received");
+          nodeState = N_IDLE;
+          recvLen = 0;
+    } else {
+      TcpReceive(sock, buf, elcount(buf));
+      return;
+    }
   }
 
   TcpReceive(sock, buf, elcount(buf));
+  
 }
 
-// 7) Cleanup
-on preStop
-{
-  if (sock != INVALID)
-    TcpClose(sock);
+// Cleanup
+on preStop {
+  write("? Cleanup");
+  sysSetVariableString(sysvar::cmm::path, "");
+  sysSetVariableString(sysvar::cmm::result, "");
+  if (sock != INVALID) TcpClose(sock);
+  
 }

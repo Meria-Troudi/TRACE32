@@ -4,7 +4,7 @@
     <Object Type="Vector.CANalyzer.Panels.Design.TextBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=16.2.55.0, Culture=neutral, PublicKeyToken=null" Name="TextBoxControl1" Children="Controls" ControlName="Input/Output Box 1">
       <Property Name="Name">TextBoxControl1</Property>
       <Property Name="Size">134, 20</Property>
-      <Property Name="Location">27, 52</Property>
+      <Property Name="Location">27, 106</Property>
       <Property Name="AlarmUpperTextColor">WindowText</Property>
       <Property Name="ValueDecimalPlaces">0</Property>
       <Property Name="AlarmLowerBkgColor">Salmon</Property>
@@ -22,7 +22,7 @@
     <Object Type="Vector.CANalyzer.Panels.Design.ButtonControl, Vector.CANalyzer.Panels.CommonControls, Version=16.2.55.0, Culture=neutral, PublicKeyToken=null" Name="ButtonControl1" Children="Controls" ControlName="Button 1">
       <Property Name="Name">ButtonControl1</Property>
       <Property Name="Size">75, 23</Property>
-      <Property Name="Location">260, 23</Property>
+      <Property Name="Location">260, 77</Property>
       <Property Name="Text">run</Property>
       <Property Name="SymbolConfiguration">8;16;cmm;;;run;1;;;-1;;;;;;0</Property>
       <Property Name="TabIndex">4</Property>
@@ -30,7 +30,7 @@
     <Object Type="Vector.CANalyzer.Panels.Design.HexEditorControl, Vector.CANalyzer.Panels.CommonControls, Version=16.2.55.0, Culture=neutral, PublicKeyToken=null" Name="HexEditorControl1" Children="Controls" ControlName="Hex/Text Editor 1">
       <Property Name="Name">HexEditorControl1</Property>
       <Property Name="Size">314, 88</Property>
-      <Property Name="Location">27, 86</Property>
+      <Property Name="Location">27, 158</Property>
       <Property Name="ColumnCount">40</Property>
       <Property Name="ViewLayout">OnlyTextfield</Property>
       <Property Name="SymbolDataType">String</Property>
@@ -40,7 +40,7 @@
     <Object Type="Vector.CANalyzer.Panels.Design.PathControl, Vector.CANalyzer.Panels.CommonControls, Version=16.2.55.0, Culture=neutral, PublicKeyToken=null" Name="PathControl1" Children="Controls" ControlName="Path Dialog 1">
       <Property Name="Name">PathControl1</Property>
       <Property Name="Size">227, 23</Property>
-      <Property Name="Location">27, 23</Property>
+      <Property Name="Location">27, 77</Property>
       <Property Name="SymbolConfiguration">8;16;cmm;;;path;4;;;-1;;;;;;0</Property>
       <Property Name="TabIndex">0</Property>
     </Object>

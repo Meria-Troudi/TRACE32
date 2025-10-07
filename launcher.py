@@ -1,89 +1,85 @@
+# launcher.py
+# Orchestrates configuration and launches TRACE32 and CANoe.
+
 import os
 import sys
-import subprocess
+import time
 import configparser
 import tkinter as tk
 from tkinter import messagebox
 from auto_config import ConfigWizard, CONFIG_PATH, get_app_folder
-import trace32_launcher  # Make sure this module exists and is importable
+import trace32_launcher
+
 
 CONFIG_DONE_FLAG = os.path.join(get_app_folder(), ".config_done")
 
-def show_error(title: str, message: str):
+REQUIRED_PATHS = [
+    ("paths", "trace32_exe"),
+    ("paths", "trace32_dll"),
+    ("paths", "trace32_config"),
+    ("paths", "canoe_cfg"),
+    ("paths", "tmp_dir"),
+]
+
+
+def show_error(title, message):
     root = tk.Tk()
     root.withdraw()
-    messagebox.showerror(title, message, parent=root)
+    messagebox.showerror(title, message)
     root.destroy()
 
-def is_config_valid(cfg: configparser.ConfigParser, required: list) -> bool:
-    for section, key in required:
+
+def is_config_valid(cfg):
+    for section, key in REQUIRED_PATHS:
         if not cfg.has_option(section, key):
             return False
-        path = cfg.get(section, key)
-        if key.endswith("_dir"):
-            if not os.path.isdir(path):
-                return False
-        else:
-            if not os.path.isfile(path):
-                return False
+        value = cfg.get(section, key)
+        if key.endswith("_dir") and not os.path.isdir(value):
+            return False
+        if not key.endswith("_dir") and not os.path.isfile(value):
+            return False
     return True
 
-def ensure_config() -> bool:
-    """
-    Runs ConfigWizard only if configuration is incomplete or missing.
-    Returns True if config is valid, False otherwise.
-    """
+
+def ensure_config():
     cfg = configparser.ConfigParser()
     if not os.path.isfile(CONFIG_PATH):
         open(CONFIG_PATH, "a").close()
 
     cfg.read(CONFIG_PATH)
 
-    required = [
-        ("paths", "trace32_exe"),
-        ("paths", "trace32_dll"),
-        ("paths", "trace32_config"),
-        ("paths", "canoe_cfg"),
-        ("paths", "tmp_dir"),
-    ]
-
-    # Short-circuit if config was previously marked as complete
-    if os.path.isfile(CONFIG_DONE_FLAG) and is_config_valid(cfg, required):
+    if os.path.isfile(CONFIG_DONE_FLAG) and is_config_valid(cfg):
         return True
 
-    # Otherwise, check validity and launch wizard if needed
+    # show small waiting window
+    wait = tk.Tk()
+    wait.title("Preparing Configuration Wizard")
+    tk.Label(wait, text="Preparing configuration wizard, please wait...").pack(padx=20, pady=20)
+    wait.update()
+    time.sleep(1)
+    wait.destroy()
+
+    # launch wizard
     root = tk.Tk()
-    root.withdraw()
-    messagebox.showinfo(
-        "Configuration Required",
-        "Some required paths are missing or invalid.\nPlease complete the configuration.",
-        parent=root
-    )
-    root.destroy()
+    root.title("Configuration Wizard")
+    root.geometry("700x500")
+    ConfigWizard(root).pack(fill="both", expand=True)
+    root.mainloop()
 
-    wizard_root = tk.Tk()
-    wizard_root.title("Configuration Wizard")
-    wizard_root.geometry("600x600")
-    ConfigWizard(wizard_root).pack(fill="both", expand=True)
-    wizard_root.grab_set()
-    wizard_root.mainloop()
-
-    # Re-check config
     cfg.read(CONFIG_PATH)
-    if is_config_valid(cfg, required):
-        # Mark as completed
+    if is_config_valid(cfg):
         with open(CONFIG_DONE_FLAG, "w") as f:
             f.write("done")
         return True
 
-    show_error("Configuration Incomplete", "Configuration is still missing or invalid. Exiting.")
+    show_error("Configuration Incomplete", "Required paths missing or invalid.")
     return False
+
 
 def launch_canoe():
     cfg = configparser.ConfigParser()
     cfg.read(CONFIG_PATH)
     canoe_cfg = cfg.get("paths", "canoe_cfg", fallback="")
-
     if not canoe_cfg or not os.path.isfile(canoe_cfg):
         show_error("Missing CANoe Config", f"Cannot find CANoe config at:\n{canoe_cfg}")
         return False
@@ -96,12 +92,13 @@ def launch_canoe():
         show_error("Launch Error", f"Failed to open CANoe config:\n{e}")
         return False
 
+
 def main():
     if not ensure_config():
-        print("[Launcher] Configuration invalid or incomplete. Exiting.")
+        print("[Launcher] Configuration incomplete. Exiting.")
         return
 
-    print("[Launcher] Configuration OK. Launching CANoe.")
+    print("[Launcher] Configuration valid. Launching CANoe.")
     launch_canoe()
 
     try:
@@ -111,6 +108,7 @@ def main():
         print("[Launcher] TRACE32 launched successfully.")
     except Exception as e:
         show_error("TRACE32 Error", f"Failed to start TRACE32:\n{e}")
+
 
 if __name__ == "__main__":
     main()

@@ -6,21 +6,25 @@ import configparser
 import os
 
 T32_DEV = 0  
-TIMEOUT = 20
-INACTIVITY_TIMEOUT = 5
+
 from auto_config import get_app_folder, CONFIG_PATH
 
 # Load config.ini
 cfg = configparser.ConfigParser()
 cfg.read(CONFIG_PATH)
+# Use values from config, fallback to files next to exe (_MEIPASS)
+APP_DIR = get_app_folder()
 
-T32_EXE    = cfg.get("paths", "trace32_exe", fallback="")
-T32_CONFIG = cfg.get("paths", "trace32_config", fallback="")
-T32_DLL    = cfg.get("paths", "trace32_dll", fallback="")
+T32_EXE    = cfg.get("paths", "trace32_exe", fallback=os.path.join(APP_DIR, "bin", "t32marm.exe"))
+T32_CONFIG = cfg.get("paths", "trace32_config", fallback=os.path.join(APP_DIR, "dll", "config.t32"))
+T32_DLL    = cfg.get("paths", "trace32_dll", fallback=os.path.join(APP_DIR, "dll", "t32api64.dll"))
+NODE               = cfg.get("runtime", "trace32_node", fallback="localhost")
+PORT               = cfg.get("runtime", "trace32_port", fallback="20000")
+PACKLEN            = cfg.get("runtime", "trace32_packlen", fallback="1024")
+TIMEOUT            = cfg.getint("runtime", "timeout", fallback=20)
+INACTIVITY_TIMEOUT = cfg.getint("runtime", "inactivity_timeout", fallback=5)
 
-NODE = "localhost"
-PORT = "20000"
-PACKLEN = "1024"
+
 
 
 def init_trace32():

@@ -1,14 +1,16 @@
 # CLI.py
 import socket
 import threading
-import os
-import csv
-from datetime import datetime
 from run_cmm import run_cmm
-import auto_config
 
-HOST       =  "127.0.0.1"
-PORT       = 12345
+import configparser, os
+from auto_config import CONFIG_PATH
+
+cfg = configparser.ConfigParser()
+cfg.read(CONFIG_PATH)
+HOST = cfg.get("runtime", "cli_host", fallback="127.0.0.1")
+PORT = cfg.getint("runtime", "cli_port", fallback=12345)
+
 
 def handle_client(conn, addr):
     print(f"[PYTHON] Client connected: {addr}")
@@ -39,20 +41,15 @@ def handle_client(conn, addr):
                         conn.sendall(b"ERROR: Invalid count\n")
                         continue
 
-                    all_out = []
-                    for i in range(count):
-                        print(f"[PYTHON] Running [{i+1}/{count}] {path}")
-                      
-                        res = run_cmm(path)
-                    
-
-                        all_out.append(f"[{i+1}] {res} \n")
-                        print(f"[PYTHON] Collected output: {len(all_out)} messages")
-                    final = "\n".join(all_out) + "\n<<<EOT>>>\n"
-                    conn.sendall(final.encode())
-
-                else:
-                    conn.sendall(f"ERROR: Unknown command '{msg}'\n".encode())
+                       # Minimal change: run exactly one CMM run per request (CAPL drives loop)
+                    print(f"[PYTHON] Running single run for {path} (index={count})")
+                    res = run_cmm(path)  # returns "PASS:...\n..." or "FAIL:...\n..."
+                    payload = f"[{count}] {res.rstrip()}\n\n<<EOT>>\n"
+                    try:
+                        conn.sendall(payload.encode(errors="ignore"))
+                        print(f"[PYTHON] Sent result for index {count}, size={len(payload)}")
+                    except Exception as e:
+                        print(f"[PYTHON] send error: {e}")
 
     except Exception as e:
         print(f"[PYTHON] Exception with client {addr}: {e}")

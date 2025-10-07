@@ -1,25 +1,34 @@
+# trace32_launcher.py
 import os, subprocess, time, ctypes, configparser
-from auto_config import get_app_folder, CONFIG_PATH
+from auto_config import  CONFIG_PATH, get_app_folder
 
-# Load config.ini
 cfg = configparser.ConfigParser()
 cfg.read(CONFIG_PATH)
+# Use values from config, fallback to files next to exe (_MEIPASS)
+APP_DIR = get_app_folder()
 
-T32_EXE    = cfg.get("paths", "trace32_exe", fallback="")
-T32_CONFIG = cfg.get("paths", "trace32_config", fallback="")
-T32_DLL    = cfg.get("paths", "trace32_dll", fallback="")
+T32_EXE    = cfg.get("paths", "trace32_exe", fallback=os.path.join(APP_DIR, "bin", "t32marm.exe"))
+T32_CONFIG = cfg.get("paths", "trace32_config", fallback=os.path.join(APP_DIR, "dll", "config.t32"))
+T32_DLL    = cfg.get("paths", "trace32_dll", fallback=os.path.join(APP_DIR, "dll", "t32api64.dll"))
+NODE               = cfg.get("runtime", "trace32_node", fallback="localhost")
+PORT               = cfg.get("runtime", "trace32_port", fallback="20000")
+PACKLEN            = cfg.get("runtime", "trace32_packlen", fallback="1024")
 
-NODE         = "localhost"
-PORT         = "20000"
-PACKLEN      = "1024"
+
+import locale
 
 def is_running():
     try:
-        output = subprocess.check_output("tasklist", creationflags=subprocess.CREATE_NO_WINDOW).decode()
+        cp = locale.getpreferredencoding(False)
+        output = subprocess.check_output(
+            "tasklist",
+            creationflags=subprocess.CREATE_NO_WINDOW
+        ).decode(cp, errors="ignore")
         return any(name in output.lower() for name in ("t32marm.exe", "t32start.exe"))
     except Exception as e:
         print(f"[TRACE32] Error checking running processes: {e}")
         return False
+
 
 def kill_existing():
     targets = ["t32marm.exe", "t32start.exe"]
@@ -56,5 +65,6 @@ def init_api():
     api.T32_Init()
     api.T32_Attach(1)
     api.T32_Ping()
-    print("[TRACE32] API ready.")
+ 
     return api
+

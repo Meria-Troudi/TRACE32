@@ -1,0 +1,123 @@
+/*@!Encoding:1252*/
+variables{
+    msTimer   timeoutTimer;
+    char  testPath[1024];
+    char  testResult[2048];
+    int testCount;         
+     int overallOk = 1;   int  totalPass   = 0; int  totalFail   = 0;
+    int  testOutcome;       
+    int  timedOut;
+   int  overallResult = 1;      // assume success until a FAIL
+  
+    char singleResult[2048];
+    const long WAIT_MS = 5000; 
+  const long totalWait = 0;
+   int  i;
+    int len, token, joinRes, cnt, ok;
+    int countPass = 0;int countFail = 0;
+    long  pos;
+    long pathBuf[1024];
+  }
+
+ int validatePath(char p[])
+  {
+    len = strlen(p);
+    if (p[0]=='\0' || len < 5
+        || p[len-4] != '.'
+        || toLower(p[len-3]) != 'c'
+        || toLower(p[len-2]) != 'm'
+        || toLower(p[len-1]) != 'm')
+    {
+      TestStepFail("Validation", "The specified path '%s' is invalid. Please check the file extension and try again.", p);
+      return 0;
+    }else{
+    TestStepPass("Validation", "File path '%s' validated successfully.", p);
+    return 1;}
+  }
+
+ int validateCount(int c)
+  {
+    if (c < 1){
+      TestStepFail("Validation", "Invalid count value: %d. Count must be at least 1.", c);
+      return 0;
+    }else{
+    TestStepPass("Validation", "Test execution count set to %d.", c);
+    return 1;
+    }
+  }
+on timer timeoutTimer
+  {
+    timedOut = 1;
+    TestStepFail("Timeout", "No <<<EOT>>> within %d?ms", WAIT_MS);
+  }
+  int runCmm(char path[], int count)
+  {
+     for (i = 1; i <= count; ++i)
+  {
+    sysSetVariableString(sysvar::cmm::result, "");
+    token = TestJoinSysvarEvent(sysvar::cmm::result);
+    
+    sysSetVariableString(sysvar::cmm::path, path);
+    sysSetVariableInt(sysvar::cmm::count, i);
+    sysSetVariableInt(sysvar::cmm::run, 1);
+    
+    TestStepPass("Trigger", "Run pressed for '%s' (count=%d)", path, count);
+   
+    timedOut = 0;
+    setTimer(timeoutTimer, WAIT_MS);
+    
+    joinRes = TestWaitForAnyJoinedEvent(WAIT_MS);
+    
+    if (joinRes == token && !timedOut){
+      cancelTimer(timeoutTimer);
+      sysGetVariableString(sysvar::cmm::result, testResult, getValueSize(testResult));
+      TestStepPass("Receive", "Result received: %s", testResult);
+      write("%s",testResult);
+      sysSetVariableInt(sysvar::cmm::run, 0);
+              if (strstr(testResult, "PASS") != -1) {
+               totalPass++;
+                TestStepPass("Execution", "Run #%d PASSED", totalPass);
+               
+            } else if (strstr(testResult, "FAIL") != -1) {
+                totalFail++;
+                TestStepFail("Execution", "Run #%d FAILED",totalFail );
+              
+                overallOk = 0;
+            } else {
+                TestStepFail("Execution", "Run #%d Unknown result, treating as FAIL", i);
+                totalFail++;
+                overallOk = 0;
+            }
+        }
+        else
+        {  TestStepFail("Timeout", "Run #%d did not complete within %d ms", i, WAIT_MS);
+            overallOk = 0;
+        }
+    }
+
+    TestStepPass("Summary", "Total runs: %d, Passed: %d, Failed: %d", count, totalPass, totalFail);
+    return overallOk ? 1 : 0;
+
+  }
+
+
+ testfunction TF_StartflashMultipleTimes(char p[], int c,int res) {
+    TestModuleTitle("cmmTest");
+    TestModuleDescription("");
+  
+    sysSetVariableString("cmm","path", p);
+    sysSetVariableInt("cmm","count",c);
+  
+    if (!validatePath(p)) {
+    TestStepFail("Validation", "Aborting test due to invalid path.");
+    return; 
+  }if (!validateCount(c)) {
+    TestStepFail("Validation", "Aborting test due to invalid count.");
+    return; 
+  }
+  ok = runCmm(p, c);
+   if (ok)
+      TestStepPass("","Test finished successfully.");
+   else
+      testStepFail("Test execution failed.");
+  }

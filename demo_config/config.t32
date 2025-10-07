@@ -1,6 +1,0 @@
-; config.t32
-SCREEN=BIG
-PBI=USB
-DEVICE=LA-3500   ; or LA-3505 depending on your model
-CPU=ARM          ; Example, replace with your architecture
-ENDIAN=LE

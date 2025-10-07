@@ -1,78 +1,130 @@
+# run_cmm.py
+# This module provides functionality to run CMM scripts in TRACE32.
 import ctypes
-import os
 import time
-import json
-from typing import List
+import configparser
+import os
 
-T32_DLL = r"C:\Users\meria\Desktop\T32_Ranger\T32_r\demo\api\python\t32api64.dll"
-TIMEOUT = 180
-INACTIVITY_TIMEOUT = 5
+T32_DEV = 0  
+
+from auto_config import get_app_folder, CONFIG_PATH
+
+# Load config.ini
+cfg = configparser.ConfigParser()
+cfg.read(CONFIG_PATH)
+# Use values from config, fallback to files next to exe (_MEIPASS)
+APP_DIR = get_app_folder()
+
+T32_EXE    = cfg.get("paths", "trace32_exe", fallback=os.path.join(APP_DIR, "bin", "t32marm.exe"))
+T32_CONFIG = cfg.get("paths", "trace32_config", fallback=os.path.join(APP_DIR, "dll", "config.t32"))
+T32_DLL    = cfg.get("paths", "trace32_dll", fallback=os.path.join(APP_DIR, "dll", "t32api64.dll"))
+NODE               = cfg.get("runtime", "trace32_node", fallback="localhost")
+PORT               = cfg.get("runtime", "trace32_port", fallback="20000")
+PACKLEN            = cfg.get("runtime", "trace32_packlen", fallback="1024")
+TIMEOUT            = cfg.getint("runtime", "timeout", fallback=20)
+INACTIVITY_TIMEOUT = cfg.getint("runtime", "inactivity_timeout", fallback=5)
+
+
+
 
 def init_trace32():
-    trace32_api = ctypes.cdll.LoadLibrary(T32_DLL)
+    api = ctypes.cdll.LoadLibrary(T32_DLL)
     for _ in range(20):
         if (
-            trace32_api.T32_Config(b"NODE=", b"localhost") == 0 and
-            trace32_api.T32_Config(b"PORT=", b"40000") == 0 and
-            trace32_api.T32_Config(b"PACKLEN=", b"1024") == 0 and
-            trace32_api.T32_Init() == 0
+            api.T32_Config(b"NODE=", NODE.encode()) == 0 and
+            api.T32_Config(b"PORT=", PORT.encode()) == 0 and
+            api.T32_Config(b"PACKLEN=", PACKLEN.encode()) == 0 and
+            api.T32_Init() == 0
         ):
-            return trace32_api
+            return api
         time.sleep(0.25)
     return None
 
-def run_cmm_script(trace32_api, cmm_path):
-    trace32_api.T32_Cmd(b"PRINT")
-    path = cmm_path.replace("\\", "/").replace('"', "")
-    return trace32_api.T32_Cmd(f'DO "{path}"'.encode()) == 0
+def wait_for_script_completion(api, timeout=TIMEOUT):
+    state = ctypes.c_int(-1)
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < timeout:
+        rc = api.T32_GetPracticeState(ctypes.byref(state))
+        if rc != 0:
+            raise ConnectionError(f"Failed to get script state: {rc}")
+        if state.value == 0:  # script finished
+            return True
+        time.sleep(0.1)
+    return False
 
-def collect_messages(trace32_api, timeout=TIMEOUT, inactivity_timeout=INACTIVITY_TIMEOUT) -> List[str]:
+def run_cmm_script(api, cmm_path):
+    api.T32_Cmd(b"PRINT")  # Clear previous messages
+    path = cmm_path.replace("\\", "/").replace('"', "")
+    return api.T32_Cmd(f'DO "{path}"'.encode()) == 0
+
+
+def collect_messages_and_detect_error(api, timeout=TIMEOUT, inactivity_timeout=INACTIVITY_TIMEOUT):
     buffer = ctypes.create_string_buffer(256)
     status = ctypes.c_uint16()
-    messages, seen = [], set()
-    start = last = time.monotonic()
+    start = last_time = time.monotonic()
+    error_detected = False
+    messages = []
+    seen_msgs = set()
+    fail_keywords = ["teststepfail", "[fail]", "test failed", "aborting test", "execution failed"]
 
     while True:
         now = time.monotonic()
         if now - start > timeout:
+            error_detected = True
             messages.append("⚠️ Timeout: script did not complete in time.")
             break
-        if trace32_api.T32_GetMessage(buffer, ctypes.byref(status)) == 0 and buffer.value:
-            msg = buffer.value.decode("utf-8", errors="ignore").strip()
-            if msg and msg not in seen:
-                messages.append(msg)
-                seen.add(msg)
-                print(f"> {msg}")
-                last = now
+
+        rc = api.T32_GetMessage(buffer, ctypes.byref(status))
+        msg = buffer.value.decode("utf-8", errors="ignore").strip()
+
+        if rc == 0 and msg and msg not in seen_msgs:
+            seen_msgs.add(msg)
+            messages.append(msg)
+            last_time = now
+
+            # explicit checks
+            if status.value in (2, 16):
+                error_detected = True
+                print(f"[DEBUG] status.value {status.value} indicates error")
+            if any(k in msg.lower() for k in fail_keywords):
+                error_detected = True
+
         else:
+            # no new message
             time.sleep(0.05)
 
-    return messages
+        if now - last_time > inactivity_timeout:
+            break
 
-def run_cmm(cmm_path: str) -> str:
+    return error_detected, "\n".join(messages)
+
+
+def run_cmm(cmm_path: str):
     api = init_trace32()
     if not api:
-        return json.dumps({
-            "status": "failure",
-            "message": "❌ TRACE32 connection failed. Ensure it's running with Remote API enabled."
-        })
+        return "FAIL: TRACE32 connection failed."
 
-    if api.T32_Attach(1) != 0:
-        return json.dumps({"status": "failure", "message": "❌ Attach to TRACE32 failed."})
+    try:
+        attach_rc = api.T32_Attach(1)
+        ping_rc   = api.T32_Ping()
+        if attach_rc != 0 or ping_rc != 0:
+            return "FAIL: Failed to attach to TRACE32."
 
-    if not run_cmm_script(api, cmm_path):
-        return json.dumps({"status": "failure", "message": "❌ Failed to run the CMM script."})
+        api.T32_Cmd(b"RESET")
 
-    messages = collect_messages(api)
-    log_file = "trace32_log.txt"
-    with open(log_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(messages))
+        ok_script = run_cmm_script(api, cmm_path)
+        if not ok_script:
+            return "FAIL: Failed to run CMM script."
 
-    return json.dumps({
-        "status": "success",
-        "message": "✅ Script executed successfully.",
-        "logFile": log_file,
-        "rawOutput": messages
-    })
-   
+        done = wait_for_script_completion(api)
+        if not done:
+            return "FAIL: ⚠️ Script did not finish in time."
 
+        error, messages = collect_messages_and_detect_error(api)
+        if error:
+            return "FAIL:\n" + messages
+        else:
+            return "PASS:\n" + messages
+
+    finally:
+        api.T32_Exit()

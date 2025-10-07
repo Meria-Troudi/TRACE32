@@ -1,0 +1,16 @@
+
+; Environment variables
+OS=
+ID=T32
+TMP=C:\Users\meria\AppData\Local\Temp
+
+PBI=SIM
+NODE=localhost       
+
+RCL=NETASSIST
+PORT=20000
+PACKLEN=1024
+
+
+; Printer settings 
+PRINTER=WINDOWS

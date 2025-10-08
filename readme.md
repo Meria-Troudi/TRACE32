@@ -1,9 +1,10 @@
 @Title: Automate TRACE32 Flash Programming with Python & CANoe
 @Description: Automates TRACE32 CMM scripts execution and validation using Python backend, integrated with CANoe.
 @Keywords: TRACE32, Python, CANoe, CMM, automation, TCP, API
-@Version: 1.0
-@Date: 2025-08-06
+ 
 
+
+    
 Project Structure
 project-root/
 ├── CLI.py              # Python TCP server

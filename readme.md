@@ -14,45 +14,32 @@ project-root/
 ├── tf.can              # Test function CAPL script
 ├── config.ini          # Stores paths to TRACE32 and CLI
 
-Requirements
+### Requirements
 
 Hardware: Windows 64-bit, USB/JTAG debugger, sufficient RAM/CPU
 Software: Python 3.7+ (3.11+ recommended), TRACE32 executable & DLL, CANoe, Windows Admin privileges
 Dependencies: Python stdlib only (socket, threading, subprocess, ctypes, configparser)
 
-Installation & Setup
+### Installation & Setup
 
 Install Python
 Add to PATH and verify: python --version
-
+Python 3.7+
 Configure TRACE32 Paths
-Open TRACE32 → Environment File → copy executable and config paths into config.ini:
-
-[trace32]
-trace32_exe = C:\T32\t32marm.exe
-trace32_dll = C:\T32\api\python\t32api64.dll
-trace32_config = C:\Users\<user>\temp\.t32
-
-
-Or run launcher.py to auto-detect paths.
-
+ 
 Adjust CAPL Script
 Edit caplnode.can to launch Python server:
+      sysExec("C:\\Path\\To\\Python311\\python.exe", "CLI.py", "C:\\Path\\To\\Project");
 
-sysExec("C:\\Path\\To\\Python311\\python.exe", "CLI.py", "C:\\Path\\To\\Project");
-
-Workflow
-
-Initialize Environment: Run launcher.py to auto-detect paths and create config.ini.
+### Workflow
+Initialize Environment: Auto-detect paths and save in config.ini.
 
 Start CANoe: CAPL script starts Python server, monitors variables, sends TCP commands.
 
-Execute TRACE32 CMM: Python server launches TRACE32 via run_cmm.py, executes .cmm scripts, and returns results to CANoe.
+Execute TRACE32 CMM: Python server launches TRACE32, runs .cmm scripts, returns results.
 
-Monitor Results: Logs errors in Python console; CANoe reads pass/fail.
-
-Tips & Troubleshooting
-
+Monitor Results: Logs visible in Python console; CANoe reads pass/fail.
+### Tips & Troubleshooting
 TRACE32 crashes or doesn't load config?
    Double-check trace32_exe and trace32_config paths. Try launching manually with:
    start C:\T32\t32marm.exe -c C:\Users\you\.t32
@@ -69,7 +56,7 @@ Use consistent versions
       TRACE32 DLL: Match CPU architecture
       Don’t mix 32-bit and 64-bit binaries
 
-Security
+### Security
 
 Run CLI.py in a secure environment.
 

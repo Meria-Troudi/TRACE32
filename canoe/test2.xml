@@ -1,0 +1,9 @@
+﻿<capltestfunction name="TF_StartFlash" title="Flash multiple files">
+  <caplparam name="FilePaths" type="string">
+    C:\path\file1.hex;C:\path\file2.hex;C:\path\script.cmm
+  </caplparam>
+  <caplparam name="FileTypes" type="string">
+    hex;hex;cmm
+  </caplparam>
+  <caplparam name="Iteration" type="int">1</caplparam>
+</capltestfunction>

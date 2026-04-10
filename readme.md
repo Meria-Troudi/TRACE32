@@ -248,10 +248,6 @@ Execute a script or programming operation.
 #### PING Command
 Test server connectivity.
 
-**Format**: `PING`
-
-**Response**: `PONG`
-
 ### Tool Registry System
 
 The framework uses a plugin-based tool registry system:
@@ -348,13 +344,6 @@ logging.basicConfig(level=logging.DEBUG)
 3. Increase timeout values in config.ini
 4. Review TRACE32 console output
 
-### Debug Mode
-Enable debug logging in `CLI.py`:
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-```
-
 ### Log Files
 The system generates logs in:
 - Console output for real-time monitoring
@@ -381,20 +370,6 @@ The system generates logs in:
 3. **Audit Logging**: Monitor all operations
 4. **Regular Updates**: Keep all components updated
 
-## 🤝 Contributing
-
-### Development Setup
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-### Code Style
-- Follow PEP 8 guidelines
-- Use meaningful variable names
-- Add docstrings to all functions
-- Include error handling
 
 ### Testing
 ```bash
@@ -407,18 +382,6 @@ python tests/test_trace32.py
 # Test vFlash integration
 python tests/test_vflash.py
 ```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 📞 Support
-
-For support and questions:
-- Create an issue on GitHub
-- Check the troubleshooting section
-- Review the configuration examples
-- Contact the development team
 
 ## 🔄 Version History
 
@@ -434,5 +397,4 @@ For support and questions:
 - Simple configuration system
 
 ---
-
 **Note**: This framework is designed for professional embedded systems development and testing environments. Always follow your organization's security and development guidelines when using this tool.
